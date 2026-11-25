@@ -24,9 +24,9 @@ Hysteria2 和 Shadowsocks 链接。
 
 | 键 | 默认值 | 说明 |
 | --- | --- | --- |
-| `NODE_HOST` | — | 面板给的公网域名，链接要靠它才正确。 |
+| `NODE_HOST` | `se2.nodaroo.fun` | 面板给的公网域名，链接要靠它才正确。 |
 | `SERVER_PORT` | 读 `SERVER_PORT` / `PORT` | 面板分配的端口。 |
-| `ENABLE` | `vless,hy2,ss` | 要开的入口。 |
+| `ENABLE` | `vless,hy2` | 要开的入口。有第二个端口才加 `ss`。 |
 | `NODE_NAME` | 域名 | 链接名称前缀。 |
 | `REALITY_SNI` | `www.microsoft.com` | Reality 握手用的 TLS 1.3 站点。 |
 | `REALITY_PRIVATE_KEY` / `REALITY_PUBLIC_KEY` | 已填 | Reality 密钥对，想换可以自己换。 |
@@ -46,16 +46,15 @@ Hysteria2 和 Shadowsocks 链接。
 
 ## 端口
 
-免费面板一般只开一个端口。VLESS（TCP）和 Hysteria2（UDP）共用它；
-Shadowsocks 往后挪一个端口，因为 mihomo 不能在同一个 TCP 端口上绑两次。
+面板一般只开一个端口，VLESS（TCP）和 Hysteria2（UDP）共用它：
 
 ```
-2522/tcp  VLESS + Reality
-2522/udp  Hysteria2
-2523/tcp  Shadowsocks
+2467/tcp  VLESS + Reality
+2467/udp  Hysteria2
 ```
 
-面板只开一个端口时，用 `ENABLE=vless,hy2`。
+仓库里交的 `node.env` 因此关掉了 Shadowsocks —— mihomo 不能在同一个 TCP 端口
+绑两次。面板给了第二个端口，才改 `ENABLE=vless,hy2,ss` 并设置 `SS_PORT`。
 
 ## 输出
 

@@ -26,9 +26,9 @@ panel also work and override the file.
 
 | Key | Default | Notes |
 | --- | --- | --- |
-| `NODE_HOST` | — | Public hostname from the panel. Needed for correct links. |
+| `NODE_HOST` | `se2.nodaroo.fun` | Public hostname from the panel. Needed for correct links. |
 | `SERVER_PORT` | from `SERVER_PORT` / `PORT` | Port the panel allocated. |
-| `ENABLE` | `vless,hy2,ss` | Entry points to run. |
+| `ENABLE` | `vless,hy2` | Entry points to run. Add `ss` only if you have a second port. |
 | `NODE_NAME` | hostname | Link label prefix. |
 | `REALITY_SNI` | `www.microsoft.com` | TLS 1.3 site used in the Reality handshake. |
 | `REALITY_PRIVATE_KEY` / `REALITY_PUBLIC_KEY` | included | Reality keypair. Replace with your own if you want. |
@@ -48,17 +48,16 @@ running with `CORE=singbox`, which generates one itself.
 
 ## Ports
 
-Most free panels open one port. VLESS (TCP) and Hysteria2 (UDP) share it;
-Shadowsocks takes the next port up because mihomo cannot bind the same TCP port
-twice.
+Panels usually open one port. VLESS (TCP) and Hysteria2 (UDP) share it:
 
 ```
-2522/tcp  VLESS + Reality
-2522/udp  Hysteria2
-2523/tcp  Shadowsocks
+2467/tcp  VLESS + Reality
+2467/udp  Hysteria2
 ```
 
-If the panel opens only one port, use `ENABLE=vless,hy2`.
+Shadowsocks is off in the shipped `node.env` for that reason — mihomo cannot
+bind the same TCP port twice. Turn it on with `ENABLE=vless,hy2,ss` only if the
+panel gives you a second port, and set `SS_PORT`.
 
 ## Output
 
