@@ -13,10 +13,11 @@ Hysteria2 和 Shadowsocks 链接。
 1. 在面板建服务器，选 **Python generic** 环境。
 2. 把 `app.py` 和 `node.env` 上传到服务器的文件区。
 3. 启动命令设为 `python app.py`，点 Start。
-4. 从控制台复制 `vless://` / `hysteria2://` / `ss://` 链接。
+4. 从控制台复制 `vless://` / `hysteria2://` 链接。
 
-仓库里的 `node.env` 可以直接用：把 `NODE_HOST` 改成面板给你的域名，然后启动。
-`SERVER_PORT` 留空就行，面板会自己注入。Reality 密钥对已经填好了，其它不用改。
+仓库里的 `node.env` 里 `NODE_HOST` 和 `SERVER_PORT` 都已经填好。这两个一般都
+得手动指定，因为域名和端口是面板定的 —— 改成你自己服务器的值就行。Reality
+密钥对已经填好，其它不用动。
 
 ## 配置
 
@@ -24,8 +25,8 @@ Hysteria2 和 Shadowsocks 链接。
 
 | 键 | 默认值 | 说明 |
 | --- | --- | --- |
-| `NODE_HOST` | `se2.nodaroo.fun` | 面板给的公网域名，链接要靠它才正确。 |
-| `SERVER_PORT` | 读 `SERVER_PORT` / `PORT` | 面板分配的端口。 |
+| `NODE_HOST` | `se2.nodaroo.fun` | 面板给的公网域名，必须设置。 |
+| `SERVER_PORT` | `2467` | 面板分配的端口，一般要显式指定。 |
 | `ENABLE` | `vless,hy2` | 要开的入口。有第二个端口才加 `ss`。 |
 | `NODE_NAME` | 域名 | 链接名称前缀。 |
 | `REALITY_SNI` | `www.microsoft.com` | Reality 握手用的 TLS 1.3 站点。 |

@@ -16,13 +16,9 @@ Experimental, provided as is. Not affiliated with any hosting provider.
 3. Set the start command to `python app.py`, press Start.
 4. Copy the `vless://` / `hysteria2://` links from the console.
 
-The default startup line `if [[ -d .git ]] && …; then git pull; fi` only pulls
-when a `.git` directory exists, so the panel's Git import has to be used once
-(or the files uploaded by hand) before the first start.
-
-The `node.env` in this repository works as is: set `NODE_HOST` to the hostname
-your panel gives you, then start. `SERVER_PORT` can stay empty — the panel
-already exports it. A Reality keypair is included, so nothing else is required.
+`node.env` ships with `NODE_HOST` and `SERVER_PORT` filled in. Both normally have
+to be set by hand — the panel fixes the hostname and the port. Change them to
+match your server; a Reality keypair is already included.
 
 ## Configuration
 
@@ -31,8 +27,8 @@ panel also work and override the file.
 
 | Key | Default | Notes |
 | --- | --- | --- |
-| `NODE_HOST` | `se2.nodaroo.fun` | Public hostname from the panel. Needed for correct links. |
-| `SERVER_PORT` | from `SERVER_PORT` / `PORT` | Port the panel allocated. |
+| `NODE_HOST` | `se2.nodaroo.fun` | Public hostname from the panel. Set this. |
+| `SERVER_PORT` | `2467` | Port the panel allocated. Usually has to be set explicitly. |
 | `ENABLE` | `vless,hy2` | Entry points to run. Add `ss` only if you have a second port. |
 | `NODE_NAME` | hostname | Link label prefix. |
 | `REALITY_SNI` | `www.microsoft.com` | TLS 1.3 site used in the Reality handshake. |
