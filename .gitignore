@@ -1,0 +1,13 @@
+node.env
+state.json
+config.json
+cert.pem
+key.pem
+core
+core.log
+sing-box.log
+out/
+*.tar.gz
+*.gz
+__pycache__/
+.tmp
