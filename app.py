@@ -54,6 +54,7 @@ STATE_FILE = os.path.join(BASE, "state.json")
 LOG_FILE = os.path.join(BASE, "core.log")
 ENV_FILE = next((p for p in ENV_FILE_CANDIDATES if os.path.isfile(p)), ENV_FILE_CANDIDATES[0])
 OUT_DIR = os.path.join(BASE, "out")
+RUN_LOG = os.path.join(BASE, "launcher.log")
 
 DEFAULTS = {
     # where the host exposes this container
@@ -107,8 +108,16 @@ STATE_KEYS = (
 )
 
 
-def log(msg):
-    print(f"[nodaroo-box] {msg}", flush=True)
+def log(msg, level="info"):
+    """Console line in the panel log, and one line in launcher.log on disk."""
+    stamp = time.strftime("%H:%M:%S")
+    line = f"[nodaroo-box] {msg}"
+    print(line if level == "info" else f"[nodaroo-box] {level}: {msg}", flush=True)
+    try:
+        with open(RUN_LOG, "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%d')} {stamp} {level:5} {msg}\n")
+    except OSError:
+        pass
 
 
 # --------------------------------------------------------------------------
@@ -171,11 +180,10 @@ def pick_host(s):
 
 
 def run_cli(cmd, timeout=20):
-    """stdout+stderr of a short-lived CLI call; None on failure.
+    """stdout+stderr of a short-lived CLI call; None on failure or timeout.
 
-    Deliberately uses Popen+communicate: on this kernel subprocess.run with a
-    pipe inside a multi-threaded parent can block on the stray grandchild fds
-    sing-box/mihomo leave behind, which made `version` probes hang for 20s.
+    A timeout is not a crash: some cores block on `version` when the filesystem
+    is slow, so the caller falls back to another probe or another core.
     """
     try:
         proc = subprocess.Popen(
@@ -196,7 +204,7 @@ def run_cli(cmd, timeout=20):
 
 
 def core_version(path):
-    """Return the CLI's reported version, or None when the binary is unusable."""
+    """Return the version the binary reports, or None when it cannot run here."""
     if not os.path.isfile(path):
         return None
     text = run_cli([path, "-v"], timeout=8)
@@ -213,9 +221,6 @@ def core_version(path):
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     if lines and re.fullmatch(r"\d+\.\d+\.\d+\S*", lines[0]):
         return lines[0]
-    m = re.search(r"Mihomo Meta v(\S+)", text)
-    if m:
-        return m.group(1)
     return None
 
 
@@ -404,10 +409,13 @@ def load_state():
         try:
             with open(STATE_FILE, encoding="utf-8") as f:
                 state = json.load(f)
-            missing = [k for k in STATE_KEYS if k not in state]
+            # A key is only missing when absent. An empty string is a real value
+            # (obfs disabled) and must not re-trigger generation on every start.
+            missing = [k for k in STATE_KEYS if state.get(k) is None]
             if not missing:
+                log("reusing credentials from state.json")
                 return state
-            log(f"state.json missing {', '.join(missing)}, regenerating those")
+            log(f"state.json has empty {', '.join(missing)}, filling them in", "warn")
         except (OSError, json.JSONDecodeError) as e:
             log(f"state.json unreadable ({e}), generating new credentials")
             state = {}
@@ -453,6 +461,10 @@ def ensure_state(s, state, core):
         state["hy2_password"] = secrets.token_urlsafe(18)
         fresh.append("hysteria2 password")
     need_obfs = str(s.get("HY2_OBFS") or "").strip().lower() == "salamander"
+    if "hy2_obfs_password" not in state:
+        # absent means "never decided"; record it even when obfs is off so the
+        # next start does not look like a half-written state file
+        state["hy2_obfs_password"] = ""
     if need_obfs and not state.get("hy2_obfs_password") and not str(s.get("HY2_OBFS_PASSWORD") or "").strip():
         state["hy2_obfs_password"] = secrets.token_urlsafe(18)
         fresh.append("hysteria2 obfs password")
@@ -464,7 +476,8 @@ def ensure_state(s, state, core):
     method = str(s.get("SS_METHOD") or DEFAULTS["SS_METHOD"])
     if not state.get("ss_password"):
         state["ss_password"] = b64(secrets.token_bytes(ss_key_bytes(method)))
-        fresh.append("shadowsocks 2022 key")
+        if "ss" in enabled(s):  # generated up front so enabling ss later just works
+            fresh.append("shadowsocks 2022 key")
     state["short_id"] = sh_id(s.get("REALITY_SHORT_ID") or state.get("short_id"))
     state.setdefault("tls_created", 0)
     if fresh:
@@ -948,65 +961,161 @@ def print_links(items):
 # process supervision
 
 
+def rotate(path, limit=1_000_000):
+    """Keep the log files bounded; a free container has a small disk quota."""
+    try:
+        if os.path.getsize(path) > limit:
+            os.replace(path, path + ".1")
+    except OSError:
+        pass
+
+
 class Runner:
-    def __init__(self, core):
+    """Runs the core, restarts it, and keeps its state recoverable."""
+
+    STARTUP_GRACE = 3       # seconds before probing listeners
+    HEALTHY_AFTER = 120     # uptime that resets the backoff
+    MAX_DELAY = 60
+
+    def __init__(self, core, config, watchdog=True):
         self.core = core
+        self.config = config
+        self.watchdog = watchdog
         self.proc = None
         self.stopping = False
         self.delay = 3
+        self.starts = 0
+        self.started = 0.0
+
+    # -- lifecycle ---------------------------------------------------------
+
+    def install_signal_handlers(self):
+        signal.signal(signal.SIGTERM, self.request_stop)
+        signal.signal(signal.SIGINT, self.request_stop)
+        try:
+            signal.signal(signal.SIGHUP, self.request_stop)
+        except (AttributeError, ValueError):
+            pass
 
     def request_stop(self, *_):
+        if not self.stopping:
+            log("stop requested, shutting the core down")
         self.stopping = True
-        if self.proc and self.proc.poll() is None:
+        self.stop()
+
+    def stop(self):
+        proc = self.proc
+        if proc and proc.poll() is None:
             try:
-                self.proc.terminate()
+                proc.terminate()
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                log("core ignored SIGTERM, killing it", "warn")
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except OSError:
+                    proc.kill()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
             except OSError:
                 pass
 
+    def cleanup(self):
+        """Remove state that must not outlive a normal shutdown."""
+        self.stop()
+        for path in (CONFIG_FILE, CONFIG_FILE + ".tmp"):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+    # -- run loop ----------------------------------------------------------
+
+    def command(self):
+        if self.core == "mihomo":
+            return [BIN, "-d", BASE, "-f", CONFIG_FILE]
+        return [BIN, "run", "-c", CONFIG_FILE]
+
     def start(self):
         if self.proc and self.proc.poll() is not None:
-            # close the previous child's pipe before replacing it, and give the
-            # kernel a moment to release the listen socket it just closed
             try:
                 self.proc.stdout.close()
             except (OSError, AttributeError):
                 pass
             if not self.stopping:
-                time.sleep(1)
+                time.sleep(1)  # let the kernel release the old sockets
+        rotate(LOG_FILE)
         out = open(LOG_FILE, "ab", buffering=0)
-        cmd = [BIN, "-d", BASE, "-f", CONFIG_FILE] if self.core == "mihomo" else [
-            BIN, "run", "-c", CONFIG_FILE
-        ]
         self.proc = subprocess.Popen(
-            cmd,
+            self.command(),
             cwd=BASE,
             stdout=out,
             stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
             start_new_session=True,
         )
         self.started = time.time()
-        time.sleep(3)  # let the core finish binding before anything probes it
+        self.starts += 1
+        log(f"core pid {self.proc.pid} (start #{self.starts})")
 
-    def watch(self, watchdog):
-        while True:
+    def run(self):
+        self.start()
+        time.sleep(self.STARTUP_GRACE)
+        if self.proc.poll() is None:
+            probe_ports(self.config, self.core)
+        else:
+            log("core exited during startup", "error")
+            tail = read_tail(LOG_FILE, 10)
+            for line in tail:
+                print(f"    {line}", flush=True)
+
+        while not self.stopping:
             code = self.proc.poll()
             if code is None:
                 time.sleep(2)
                 continue
             if self.stopping:
+                break
+            uptime = int(time.time() - self.started)
+            if not self.watchdog:
+                log(f"core exited with code {code} after {uptime}s; WATCHDOG=0", "warn")
                 return code
-            if not watchdog:
-                log(f"{self.core} exited with code {code}, WATCHDOG=0 so not restarting")
-                return code
-            if time.time() - self.started > 120:
+            if uptime > self.HEALTHY_AFTER:
                 self.delay = 3
-            log(f"{self.core} exited with code {code}, restarting in {self.delay}s")
-            for _ in range(self.delay * 2):
-                if self.stopping:
-                    return code
-                time.sleep(0.5)
-            self.delay = min(self.delay * 2, 60)
+            log(f"core exited with code {code} after {uptime}s, restart in {self.delay}s", "warn")
+            for line in read_tail(LOG_FILE, 5):
+                print(f"    {line}", flush=True)
+            if self.sleep(self.delay):
+                break
+            self.delay = min(self.delay * 2, self.MAX_DELAY)
+            if self.delay >= self.MAX_DELAY:
+                log("core keeps failing; check core.log and node.env", "error")
             self.start()
+
+        self.stop()
+        return self.proc.poll() if self.proc else 0
+
+    def sleep(self, seconds):
+        deadline = time.time() + seconds
+        while time.time() < deadline:
+            if self.stopping:
+                return True
+            time.sleep(0.25)
+        return False
+
+
+def read_tail(path, lines):
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - 4096))
+            text = f.read().decode(errors="replace")
+        return [ln for ln in text.splitlines() if ln.strip()][-lines:]
+    except OSError:
+        return []
 
 
 def port_free_hint(port):
@@ -1022,14 +1131,21 @@ def port_free_hint(port):
 
 def main():
     os.chdir(BASE)
+    log(f"nodaroo-box starting (python {platform.python_version()}, {platform.machine()})")
+    env_note = ENV_FILE if os.path.isfile(ENV_FILE) else "(none, using panel variables)"
+    log(f"workdir {BASE}, env {env_note}")
     s = load_settings()
     port = pick_port(s)
     if not str(s.get("NODE_HOST") or "").strip():
-        log("NODE_HOST is empty, printed links will contain a placeholder host")
+        log("NODE_HOST is empty, printed links will contain a placeholder host", "warn")
+    entries = enabled(s)
+    if not entries:
+        log("ENABLE lists nothing to run; set ENABLE=vless,hy2", "error")
+        return 2
 
     core = ensure_core(s)
     state = ensure_state(s, load_state(), core)
-    if "hy2" in enabled(s):
+    if "hy2" in entries:
         s["_cert"], s["_key"] = ensure_cert(s, core)
     else:
         s["_cert"] = s["_key"] = ""
@@ -1044,21 +1160,29 @@ def main():
     items = links(s, state, port)
     write_outputs(items, s, state, port)
     print_links(items)
-    log(f"starting {core} on TCP+UDP {port} ({', '.join(enabled(s)) or 'nothing enabled'})")
+    log(f"starting {core} on {port} ({', '.join(entries)})")
     port_free_hint(port)
 
-    runner = Runner(core)
-    signal.signal(signal.SIGTERM, runner.request_stop)
-    signal.signal(signal.SIGINT, runner.request_stop)
-    runner.start()
-    probe_ports(config, core)
-    code = runner.watch(truthy(s.get("WATCHDOG", "1")))
-    log("stopped")
-    sys.exit(code or 0)
+    runner = Runner(core, config, truthy(s.get("WATCHDOG", "1")))
+    runner.install_signal_handlers()
+    try:
+        code = runner.run()
+    finally:
+        runner.cleanup()
+        log("stopped")
+    return code or 0
 
 
 if __name__ == "__main__":
     try:
-        main()
+        sys.exit(main())
     except KeyboardInterrupt:
         sys.exit(0)
+    except SystemExit:
+        raise
+    except Exception as exc:  # noqa: BLE001 - last resort, keep the panel log useful
+        log(f"unhandled error: {exc}", "error")
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)

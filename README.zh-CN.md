@@ -63,9 +63,26 @@ Hysteria2 和 Shadowsocks 链接。
 - `out/links.txt` — 每行一条链接
 - `out/subscription.txt` — 同样内容，base64，可以当订阅文件
 - `out/node.json` — 节点参数
-- `state.json` — 生成的凭据，重启不变
+- `state.json` — 生成的凭据，之后每次启动复用
+- `launcher.log` — 生命周期日志，超过 1MB 自动轮转
+- `core.log` — 内核自己的输出，超过 1MB 自动轮转
 
 客户端：sing-box、mihomo、Clash Meta、Shadowrocket、NekoBox、v2rayN。
+
+## 生命周期
+
+```
+启动 -> 读 node.env -> 内核在不在？没有就下载 -> 凭据（state.json）
+     -> 写 config.json -> 校验 -> 打印链接 -> 启动内核
+     -> 内核退出？退避重拉 3s..60s（稳定跑满 120s 后重置）
+     -> SIGTERM/SIGINT/SIGHUP -> 先 SIGTERM 内核，超时 SIGKILL
+     -> 删除 config.json -> 退出
+```
+
+第二次及以后启动复用 `state.json`：UUID、Reality 密钥对、密码都不变，客户端
+配置继续有效。想全部换新，删掉这个文件即可。
+
+`config.json` 每次启动重新生成、退出时删除，不会留下崩溃前的旧配置。
 
 ## 注意事项
 
@@ -74,6 +91,9 @@ Hysteria2 和 Shadowsocks 链接。
   把 `ENABLE` 减一减。
 - 下载失败就设置 `MIRROR`。
 - `state.json` 里是有效凭据，不会进 git。
+- 删掉 `state.json` 会换一整套凭据，客户端要用新链接。
+- `WATCHDOG=0` 内核退出后不再重拉，调试时用。
+- 日志（`launcher.log`、`core.log`）超过 1MB 自动轮转，不进 git。
 
 ## 许可
 

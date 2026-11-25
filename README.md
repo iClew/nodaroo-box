@@ -71,9 +71,27 @@ Links are printed to the console and written next to the script:
 - `out/links.txt` — one link per line
 - `out/subscription.txt` — same links, base64, usable as a subscription file
 - `out/node.json` — node parameters
-- `state.json` — generated credentials, kept across restarts
+- `state.json` — generated credentials, reused on every later start
+- `launcher.log` — one line per lifecycle event, rotated at 1 MB
+- `core.log` — the core's own output, rotated at 1 MB
 
 Clients: sing-box, mihomo, Clash Meta, Shadowrocket, NekoBox, v2rayN.
+
+## Lifecycle
+
+```
+start -> read node.env -> core present? install -> credentials (state.json)
+      -> write config.json -> validate -> print links -> run core
+      -> core exits? restart with backoff 3s..60s (reset after 120s uptime)
+      -> SIGTERM/SIGINT/SIGHUP -> stop core (SIGTERM, then SIGKILL)
+       -> remove config.json -> exit
+```
+
+Second and later starts reuse `state.json`: same UUID, same Reality keypair,
+same passwords, so clients keep working. Delete that file to rotate everything.
+
+`config.json` is generated on every start and removed on shutdown, so it is
+never a stale config left behind after a crash.
 
 ## Notes
 
@@ -82,6 +100,9 @@ Clients: sing-box, mihomo, Clash Meta, Shadowrocket, NekoBox, v2rayN.
   does not include it. Reduce `ENABLE`.
 - If a download fails, set `MIRROR`.
 - `state.json` holds live credentials and stays out of git.
+- Delete `state.json` to rotate every credential; clients need the new links.
+- `WATCHDOG=0` stops after the first core exit, useful when debugging.
+- Logs (`launcher.log`, `core.log`) rotate at 1 MB and stay out of git.
 
 ## License
 
