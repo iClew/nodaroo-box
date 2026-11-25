@@ -18,7 +18,8 @@ Experimental, provided as is. Not affiliated with any hosting provider.
 
 `node.env` ships with `NODE_HOST` and `SERVER_PORT` filled in. Both normally have
 to be set by hand — the panel fixes the hostname and the port. Change them to
-match your server; a Reality keypair is already included.
+match your server. Nothing else needs editing: the first start generates a
+Reality keypair, UUID and passwords and keeps them in `state.json`.
 
 ## Configuration
 
@@ -32,7 +33,7 @@ panel also work and override the file.
 | `ENABLE` | `vless,hy2` | Entry points to run. Add `ss` only if you have a second port. |
 | `NODE_NAME` | hostname | Link label prefix. |
 | `REALITY_SNI` | `www.microsoft.com` | TLS 1.3 site used in the Reality handshake. |
-| `REALITY_PRIVATE_KEY` / `REALITY_PUBLIC_KEY` | included | Reality keypair. Replace with your own if you want. |
+| `REALITY_PRIVATE_KEY` / `REALITY_PUBLIC_KEY` | generated | Reality keypair. Leave empty; set both only to pin a pair you already have. |
 | `HY2_SNI` | `NODE_HOST` | SNI in the Hysteria2 link. |
 | `HY2_OBFS` | — | `salamander` turns on Hysteria2 obfuscation. |
 | `HY2_OBFS_PASSWORD` | generated | Obfuscation password. |
@@ -44,8 +45,8 @@ panel also work and override the file.
 | `LOG_LEVEL` | `warn` | Core log level. |
 | `MIRROR` | — | GitHub mirror prefix, e.g. `https://ghfast.top`. |
 
-A new Reality keypair comes from `sing-box generate reality-keypair`, or from
-running with `CORE=singbox`, which generates one itself.
+The Reality keypair comes from the installed core (`mihomo generate reality-keypair`,
+same output as sing-box), written to `state.json` on the first start.
 
 ## Ports
 

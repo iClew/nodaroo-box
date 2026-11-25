@@ -16,8 +16,8 @@ Hysteria2 和 Shadowsocks 链接。
 4. 从控制台复制 `vless://` / `hysteria2://` 链接。
 
 仓库里的 `node.env` 里 `NODE_HOST` 和 `SERVER_PORT` 都已经填好。这两个一般都
-得手动指定，因为域名和端口是面板定的 —— 改成你自己服务器的值就行。Reality
-密钥对已经填好，其它不用动。
+得手动指定，因为域名和端口是面板定的 —— 改成你自己服务器的值就行。其它不用
+改：第一次启动会自己生成 Reality 密钥对、UUID 和密码，保存在 `state.json`。
 
 ## 配置
 
@@ -30,7 +30,7 @@ Hysteria2 和 Shadowsocks 链接。
 | `ENABLE` | `vless,hy2` | 要开的入口。有第二个端口才加 `ss`。 |
 | `NODE_NAME` | 域名 | 链接名称前缀。 |
 | `REALITY_SNI` | `www.microsoft.com` | Reality 握手用的 TLS 1.3 站点。 |
-| `REALITY_PRIVATE_KEY` / `REALITY_PUBLIC_KEY` | 已填 | Reality 密钥对，想换可以自己换。 |
+| `REALITY_PRIVATE_KEY` / `REALITY_PUBLIC_KEY` | 自动生成 | Reality 密钥对。留空即可；想固定用自己的一对，就两个都填。 |
 | `HY2_SNI` | `NODE_HOST` | Hysteria2 链接里的 SNI。 |
 | `HY2_OBFS` | — | 填 `salamander` 开启 Hysteria2 混淆。 |
 | `HY2_OBFS_PASSWORD` | 自动生成 | 混淆密码。 |
@@ -42,8 +42,8 @@ Hysteria2 和 Shadowsocks 链接。
 | `LOG_LEVEL` | `warn` | 内核日志级别。 |
 | `MIRROR` | — | GitHub 加速前缀，例如 `https://ghfast.top`。 |
 
-要新密钥对，用 `sing-box generate reality-keypair`，或者 `CORE=singbox` 启动让
-内核自己生成。
+Reality 密钥对由内核自己生成（`mihomo generate reality-keypair`，输出格式和
+sing-box 一样），首次启动写进 `state.json`。
 
 ## 端口
 

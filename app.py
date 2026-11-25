@@ -89,8 +89,7 @@ DEFAULTS = {
     "SS_UDP": "0",
     # shadowsocks port; empty = share the node port when that is possible
     "SS_PORT": "",
-    # only used when CORE=mihomo and REALITY_SNI is not set: the core cannot
-    # derive an x25519 public key from the private one, so both come from here
+    # optional override: leave empty and the core's own generator fills state.json
     "REALITY_PRIVATE_KEY": "",
     "REALITY_PUBLIC_KEY": "",
 }
@@ -207,9 +206,8 @@ def core_version(path):
     """Return the version the binary reports, or None when it cannot run here."""
     if not os.path.isfile(path):
         return None
-    text = run_cli([path, "-v"], timeout=8)
-    if not text:
-        text = run_cli([path, "version"], timeout=8)
+    # go-flags cores (mihomo) answer -v; cobra cores (sing-box) only know `version`
+    text = run_cli([path, "version"], timeout=8) or run_cli([path, "-v"], timeout=8)
     if not text:
         return None
     m = re.search(r"Mihomo Meta v(\S+)", text)
@@ -334,9 +332,7 @@ def core_kind(path):
     """'mihomo' or 'singbox' depending on what the installed binary reports."""
     if not os.path.isfile(path):
         return None
-    text = run_cli([path, "-v"], timeout=8)
-    if not text:
-        text = run_cli([path, "version"], timeout=8)
+    text = run_cli([path, "version"], timeout=8) or run_cli([path, "-v"], timeout=8)
     if not text:
         return None
     if "Mihomo" in text:
@@ -436,17 +432,24 @@ def ensure_state(s, state, core):
     fresh = []
     priv = state.get("reality_private")
     pub = state.get("reality_public")
-    if (not priv or not pub) and core == "singbox":
-        out = sb("generate", "reality-keypair")
-        priv = pub = None
-        for line in out.splitlines():
-            if "PrivateKey" in line:
-                priv = line.split()[-1].strip()
-            if "PublicKey" in line:
-                pub = line.split()[-1].strip()
-        if not priv or not pub:
-            raise SystemExit("[nodaroo-box] could not parse reality-keypair output")
-        fresh.append("reality keypair")
+    if not priv or not pub:
+        # pinned in node.env beats generating; both cores ship this generator
+        env_priv = str(s.get("REALITY_PRIVATE_KEY") or "").strip()
+        env_pub = str(s.get("REALITY_PUBLIC_KEY") or "").strip()
+        if env_priv and env_pub:
+            priv, pub = env_priv, env_pub
+            fresh.append("reality keypair (from node.env)")
+        else:
+            out = sb("generate", "reality-keypair")
+            priv = pub = None
+            for line in out.splitlines():
+                if "PrivateKey" in line:
+                    priv = line.split()[-1].strip()
+                if "PublicKey" in line:
+                    pub = line.split()[-1].strip()
+            if not priv or not pub:
+                raise SystemExit("[nodaroo-box] could not parse reality-keypair output")
+            fresh.append("reality keypair")
     if priv and pub:
         state["reality_private"], state["reality_public"] = priv, pub
     if not state.get("uuid"):
@@ -468,11 +471,6 @@ def ensure_state(s, state, core):
     if need_obfs and not state.get("hy2_obfs_password") and not str(s.get("HY2_OBFS_PASSWORD") or "").strip():
         state["hy2_obfs_password"] = secrets.token_urlsafe(18)
         fresh.append("hysteria2 obfs password")
-    env_priv = str(s.get("REALITY_PRIVATE_KEY") or "").strip()
-    env_pub = str(s.get("REALITY_PUBLIC_KEY") or "").strip()
-    if env_priv and env_pub and (env_priv, env_pub) != (state.get("reality_private"), state.get("reality_public")):
-        state["reality_private"], state["reality_public"] = env_priv, env_pub
-        fresh.append("reality keypair (from node.env)")
     method = str(s.get("SS_METHOD") or DEFAULTS["SS_METHOD"])
     if not state.get("ss_password"):
         state["ss_password"] = b64(secrets.token_bytes(ss_key_bytes(method)))
@@ -734,14 +732,6 @@ def build_mihomo_config(s, st, port, entries):
         level, "warning"
     )
 
-    if "vless" in entries and not st.get("reality_private"):
-        raise SystemExit(
-            "[nodaroo-box] VLESS+Reality needs an x25519 keypair, and mihomo cannot\n"
-            "generate one. Two ways out:\n"
-            "  1) run `sing-box generate reality-keypair` once anywhere and put the\n"
-            "     two values in node.env as REALITY_PRIVATE_KEY / REALITY_PUBLIC_KEY\n"
-            "  2) drop vless from ENABLE and run hysteria2 + shadowsocks only"
-        )
     if "vless" in entries:
         sni = reality_sni(s)
         reality = {
