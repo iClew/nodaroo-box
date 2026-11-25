@@ -35,6 +35,10 @@ import urllib.request
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 
+# Pterodactyl/Nodaroo start the file with cwd=/home/container, which is also where
+# node.env sits. Look beside the script first, then in the working directory.
+ENV_FILE_CANDIDATES = (os.path.join(BASE, "node.env"), os.path.join(os.getcwd(), "node.env"))
+
 # pinned releases; override with SINGBOX_VERSION / MIHOMO_VERSION when testing
 DEFAULT_SINGBOX_VERSION = "1.14.4"
 DEFAULT_MIHOMO_VERSION = "1.19.34"
@@ -48,7 +52,7 @@ BIN = os.path.join(BASE, "core")
 CONFIG_FILE = os.path.join(BASE, "config.json")
 STATE_FILE = os.path.join(BASE, "state.json")
 LOG_FILE = os.path.join(BASE, "core.log")
-ENV_FILE = os.path.join(BASE, "node.env")
+ENV_FILE = next((p for p in ENV_FILE_CANDIDATES if os.path.isfile(p)), ENV_FILE_CANDIDATES[0])
 OUT_DIR = os.path.join(BASE, "out")
 
 DEFAULTS = {

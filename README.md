@@ -11,9 +11,14 @@ Experimental, provided as is. Not affiliated with any hosting provider.
 ## Usage
 
 1. Create a server on the panel with the **Python generic** egg.
-2. Upload `app.py` and `node.env` to the server's files.
+2. Put `app.py` and `node.env` in the server root (`/home/container`). Either
+   import this repo through the panel's Git option, or upload the two files.
 3. Set the start command to `python app.py`, press Start.
-4. Copy the `vless://` / `hysteria2://` / `ss://` links from the console.
+4. Copy the `vless://` / `hysteria2://` links from the console.
+
+The default startup line `if [[ -d .git ]] && …; then git pull; fi` only pulls
+when a `.git` directory exists, so the panel's Git import has to be used once
+(or the files uploaded by hand) before the first start.
 
 The `node.env` in this repository works as is: set `NODE_HOST` to the hostname
 your panel gives you, then start. `SERVER_PORT` can stay empty — the panel
