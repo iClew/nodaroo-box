@@ -1,114 +1,84 @@
 # nodaroo-box
 
-One Python file that turns a free PaaS container (Pterodactyl / Nodaroo / any
-"python generic" egg) into a working mihomo node: VLESS+Reality, Hysteria2 and
-Shadowsocks 2022, with the share links printed to the console.
+A single Python file that runs a proxy node on a free PaaS container
+(Pterodactyl, Nodaroo, any "python generic" egg). It downloads mihomo, generates
+credentials, and prints VLESS, Hysteria2 and Shadowsocks links.
 
 **English** | [中文说明](README.zh-CN.md)
 
-> **Experimental.** This is a personal experiment shared as-is, not a maintained
-> product. It runs on free hosts that are not meant for this and it can stop
-> working at any time. Don't abuse it: no public proxy selling, no bulk
-> registration, no traffic that gets a host suspended. You are responsible for
-> what your node is used for and for complying with your host's terms and your
-> local law. No warranty of any kind — see [LICENSE](LICENSE).
+Experimental, provided as is. Not affiliated with any hosting provider.
 
-## Quick start
+## Usage
 
-1. Create a server on the panel, pick the **Python generic** egg.
-2. Upload `app.py` and `node.env` (copy `node.env.example` and edit it) into the
-   server's file area.
-3. Press **Start**. The console prints your `vless://`, `hysteria2://` and
-   `ss://` links.
+1. Create a server on the panel with the **Python generic** egg.
+2. Upload `app.py` and `node.env` to the server's files.
+3. Set the start command to `python app.py`, press Start.
+4. Copy the `vless://` / `hysteria2://` / `ss://` links from the console.
 
-There is nothing to install: the script downloads the mihomo core (~14 MB) on
-first start, generates credentials once, writes `config.json`, and restarts the
-core if it dies.
+The `node.env` in this repository works as is: set `NODE_HOST` to the hostname
+your panel gives you, then start. `SERVER_PORT` can stay empty — the panel
+already exports it. A Reality keypair is included, so nothing else is required.
 
 ## Configuration
 
-Everything is read from `node.env` next to the script. Process environment
-variables with the same names also work; `node.env` wins.
+`node.env` is read from the script directory. Environment variables set in the
+panel also work and override the file.
 
-| Key | Default | Meaning |
+| Key | Default | Notes |
 | --- | --- | --- |
-| `NODE_HOST` | *(empty)* | Public hostname the panel gives you. Required for correct links. |
-| `SERVER_PORT` | from `SERVER_PORT` / `PORT` | The port the panel allocated. |
-| `ENABLE` | `vless,hy2,ss` | Which entry points to run. |
-| `NODE_NAME` | host name | Prefix for the link labels. |
-| `REALITY_SNI` | `www.microsoft.com` | A real TLS 1.3 site, not behind Cloudflare. |
-| `REALITY_PRIVATE_KEY` / `REALITY_PUBLIC_KEY` | *(empty)* | x25519 keypair for Reality. mihomo cannot generate one, see below. |
-| `HY2_SNI` | `NODE_HOST` | SNI shown in the hysteria2 link. |
-| `HY2_OBFS`, `HY2_OBFS_PASSWORD` | *(empty)* | `salamander` enables hysteria2 obfuscation. |
-| `HY2_UP_MBPS` / `HY2_DOWN_MBPS` | *(empty)* | Bandwidth hints for Brutal CC. |
-| `SS_METHOD` | `2022-blake3-aes-128-gcm` | Shadowsocks 2022 cipher. |
-| `SS_PORT` | `SERVER_PORT + 1` | Shadowsocks port; see "Ports" below. |
+| `NODE_HOST` | — | Public hostname from the panel. Needed for correct links. |
+| `SERVER_PORT` | from `SERVER_PORT` / `PORT` | Port the panel allocated. |
+| `ENABLE` | `vless,hy2,ss` | Entry points to run. |
+| `NODE_NAME` | hostname | Link label prefix. |
+| `REALITY_SNI` | `www.microsoft.com` | TLS 1.3 site used in the Reality handshake. |
+| `REALITY_PRIVATE_KEY` / `REALITY_PUBLIC_KEY` | included | Reality keypair. Replace with your own if you want. |
+| `HY2_SNI` | `NODE_HOST` | SNI in the Hysteria2 link. |
+| `HY2_OBFS` | — | `salamander` turns on Hysteria2 obfuscation. |
+| `HY2_OBFS_PASSWORD` | generated | Obfuscation password. |
+| `HY2_UP_MBPS` / `HY2_DOWN_MBPS` | — | Bandwidth hints for Brutal CC. |
+| `SS_METHOD` | `2022-blake3-aes-128-gcm` | Shadowsocks cipher. |
+| `SS_PORT` | `SERVER_PORT + 1` | Shadowsocks port. |
 | `CORE` | `mihomo` | `mihomo` or `singbox`. |
-| `WATCHDOG` | `1` | Restart the core when it exits. |
+| `WATCHDOG` | `1` | Restart the core if it exits. |
 | `LOG_LEVEL` | `warn` | Core log level. |
-| `MIRROR` | *(empty)* | GitHub mirror prefix, e.g. `https://ghfast.top`. |
+| `MIRROR` | — | GitHub mirror prefix, e.g. `https://ghfast.top`. |
 
-### Pre-generated credentials
-
-mihomo takes the Reality private key but cannot print the matching public key,
-so the keypair comes from `sing-box generate reality-keypair` (one command, any
-machine) and is pasted into `node.env`:
-
-```bash
-sing-box generate reality-keypair
-# PrivateKey: xxxxx   -> REALITY_PRIVATE_KEY
-# PublicKey:  yyyyy   -> REALITY_PUBLIC_KEY
-```
-
-Leave those two empty and run `singbox` as the core instead — that core
-generates and stores the keypair itself.
+A new Reality keypair comes from `sing-box generate reality-keypair`, or from
+running with `CORE=singbox`, which generates one itself.
 
 ## Ports
 
-A free panel usually opens one port. mihomo lets VLESS (TCP) and Hysteria2 (UDP)
-share it, because those are separate transports:
+Most free panels open one port. VLESS (TCP) and Hysteria2 (UDP) share it;
+Shadowsocks takes the next port up because mihomo cannot bind the same TCP port
+twice.
 
-```text
+```
 2522/tcp  VLESS + Reality
 2522/udp  Hysteria2
-2523/tcp  Shadowsocks (auto: SERVER_PORT + 1)
+2523/tcp  Shadowsocks
 ```
 
-Shadowsocks cannot reuse the port mihomo already bound for TCP, so it moves up
-one. If your panel opens only a single port, run `ENABLE=vless,hy2` and leave
-`ss` out.
+If the panel opens only one port, use `ENABLE=vless,hy2`.
 
 ## Output
 
-The console prints the links. The same data is written next to the script:
+Links are printed to the console and written next to the script:
 
 - `out/links.txt` — one link per line
-- `out/subscription.txt` — the same links, base64, paste as a subscription URL file
-- `out/node.json` — machine-readable node parameters
-- `state.json` — generated credentials, mode `600`, kept across restarts
+- `out/subscription.txt` — same links, base64, usable as a subscription file
+- `out/node.json` — node parameters
+- `state.json` — generated credentials, kept across restarts
 
 Clients: sing-box, mihomo, Clash Meta, Shadowrocket, NekoBox, v2rayN.
 
-## Files
+## Notes
 
-```text
-app.py             the whole launcher (standard library only)
-node.env.example   copy to node.env and edit
-node.env           your settings (not committed)
-state.json         generated credentials (not committed)
-config.json        generated core config (not committed)
-out/               generated links (not committed)
-```
-
-## Troubleshooting
-
-- **`nothing is listening on port N`** — the panel's port range does not include
-  it, or another listener took it. Lower `ENABLE` to the protocols you need.
-- **Links point at the wrong address** — `NODE_HOST` is empty or wrong.
-- **Download fails** — set `MIRROR=https://ghfast.top` or another GitHub mirror.
-- **VLESS connects but no traffic** — check `REALITY_SNI` still terminates TLS
-  1.3 on port 443 of the region you are in.
+- `NODE_HOST` must be the public hostname, not the container IP.
+- If the console says `nothing is listening on port N`, the panel's port range
+  does not include it. Reduce `ENABLE`.
+- If a download fails, set `MIRROR`.
+- `state.json` holds live credentials and stays out of git.
 
 ## License
 
-MIT. The core it downloads (mihomo) has its own license; read it before use.
+MIT.

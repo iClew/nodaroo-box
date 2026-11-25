@@ -135,6 +135,7 @@ def load_settings():
     for k in DEFAULTS:
         if os.environ.get(k):
             s[k] = os.environ[k]
+    # an unset key in node.env must not blank out a value the panel exported
     s.update({k: v for k, v in parse_env_file(ENV_FILE).items() if v != ""})
     return s
 
